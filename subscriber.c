@@ -15,6 +15,31 @@
 #include "helpers.h"
 #include "subscriber.h"
 
+int sockfd;
+
+void subscribe_request(char *message) {
+    struct client_message client_message;
+    memset(&client_message, 0, sizeof(client_message));
+    sscanf(message, "%s %s", client_message.command, client_message.topic);
+
+    //int rc = send(sockfd, &client_message, sizeof(client_message), 0);
+    int rc = send_all(sockfd, &client_message, sizeof(client_message));
+    DIE(rc < 0, "send_all");
+
+    printf("Subscribed to topic %s.\n", client_message.topic);
+}
+
+void unsubscribe_request(char *message) {
+    struct client_message client_message;
+    memset(&client_message, 0, sizeof(client_message));
+    sscanf(message, "%s %s", client_message.command, client_message.topic);
+
+    int rc = send_all(sockfd, &client_message, sizeof(client_message));
+    DIE(rc < 0, "send_all");
+
+    printf("Unsubscribed from topic %s.\n", client_message.topic);
+}
+
 int main(int argc, char *argv[]) {
     setvbuf(stdout, NULL, _IONBF, 0); // setting stdout to be unbuffered
 
@@ -29,7 +54,7 @@ int main(int argc, char *argv[]) {
     DIE(rc != 1, "Given port is invalid");
 
     // Obtinem un socket TCP pentru conectarea la server
-    const int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
     DIE(sockfd < 0, "socket");
 
     // Completăm in serv_addr adresa serverului, familia de adrese si portul
@@ -76,10 +101,18 @@ int main(int argc, char *argv[]) {
             if (poll_fds[i].revents & POLLIN) {
                 if (poll_fds[i].fd == 0) { // stdin
                     char message[1024];
-                    scanf("%s", message);
+                    fgets(message, 1024, stdin);
                     if (strncmp(message, "exit", 4) == 0) {
                         exit_flag = 1;
                         break;
+                    }
+
+                    if (strncmp(message, "subscribe", 9) == 0) {
+                        subscribe_request(message);
+                    }
+
+                    if (strncmp(message, "unsubscribe", 11) == 0) {
+                        unsubscribe_request(message);
                     }
                 }
             }
@@ -87,8 +120,9 @@ int main(int argc, char *argv[]) {
 
         if (exit_flag) {
             struct client_message message;
-            strcpy(message.payload, "disconnected");
-            rc = send(sockfd, &message, sizeof(message), 0);
+            strcpy(message.command, "exit");
+            //rc = send(sockfd, &message, sizeof(message), 0);
+            send_all(sockfd, &message, sizeof(message));
             DIE(rc < 0, "send");
             break;
         }

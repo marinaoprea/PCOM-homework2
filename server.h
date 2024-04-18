@@ -14,5 +14,6 @@ struct client_info {
 };
 
 void enroll_client();
+void receive_from_client(int index);
 
 #endif

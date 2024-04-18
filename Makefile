@@ -2,9 +2,11 @@ CFLAGS = -Wall -g -Werror -Wno-error=unused-variable
 
 all: server subscriber
 
-server: server.c
+helpers.o: helpers.c
 
-subscriber: subscriber.c
+server: server.c helpers.o
+
+subscriber: subscriber.c helpers.o
 
 clean:
 	rm -rf server subscriber *.o 

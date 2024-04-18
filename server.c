@@ -58,16 +58,57 @@ void enroll_client() {
     clients[num_clients - 1].index = num_clients - 1;
 }
 
-void receive_from_client(int index) {
+receive_from_client(int index) {
     struct client_message message;
     memset(&message, 0, sizeof(message));
 
-    int rc = recv(poll_fds[index].fd, &message, sizeof(message), 0);
+    //int rc = recv(poll_fds[index].fd, &message, sizeof(message), 0);
+    int rc = recv_all(poll_fds[index].fd, &message, sizeof(message));
     DIE(rc < 0, "recv");
 
-    if (strncmp(message.payload, "disconnected", 12) == 0) {
+    if (strncmp(message.command, "exit", 4) == 0) {
         clients[index - OFFSET].connected = 0;
         printf("Client %s disconnected.\n", clients[index - OFFSET].ID);
+        return 0;
+    }
+
+    if (strncmp(message.command, "subscribe", 9) == 0) {
+        int index_client = index - OFFSET;
+        struct client_info *client = &(clients[index_client]);
+        client->num_topics++;
+        client->topics = realloc(client->topics, client->num_topics * sizeof(char *));
+        client->topics[client->num_topics - 1] = malloc(LGMAX_TOPIC * sizeof(char));
+        memset(client->topics[client->num_topics - 1], 0, LGMAX_TOPIC);
+        strcpy(client->topics[client->num_topics - 1], message.topic);
+        return;
+    }
+
+    if (strncmp(message.command, "unsubscribe", 11) == 0) {
+        int index_client = index - OFFSET;
+        struct client_info *client = &(clients[index_client]);
+
+        int topic_index = -1;
+
+        for (int i = 0; i < client->num_topics; i++) {
+            if (strcmp(client->topics[i], message.topic) == 0) {
+                topic_index = i;
+                break;
+            }
+        }
+
+        if (topic_index == -1) {
+            printf("Client was not subscribed to topic %s.\n", message.topic);
+            return;
+        }
+
+        // free topics, then move pointers to the left
+        free(client->topics[topic_index]);
+        for (int i = topic_index; i < client->num_topics - 1; i++)
+            client->topics[i] = client->topics[i + 1];
+
+        client->num_topics--;
+        client->topics = realloc(client->topics, client->num_topics * sizeof(char *));
+        DIE(!client->topics, "realloc");
         return;
     }
 }

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #define LGMAX_ID 10
+#define LGMAX_TOPIC 50
 
 /*
  * Macro de verificare a erorilor
@@ -21,5 +22,8 @@
       exit(EXIT_FAILURE);                                                      \
     }                                                                          \
   } while (0)
+
+int recv_all(int sockfd, void *buffer, size_t len);
+int send_all(int sockfd, void *buffer, size_t len);
 
 #endif
