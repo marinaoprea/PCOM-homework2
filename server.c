@@ -92,18 +92,69 @@ int main(int argc, char *argv[]) {
     DIE(rc < 0, "listen");
 
     struct pollfd *poll_fds;
-    int num_sockets = 2;
+    int num_sockets = 3;
 
-    poll_fds = calloc(2, sizeof(struct pollfd));
+    poll_fds = calloc(3, sizeof(struct pollfd));
+    DIE(!poll_fds, "calloc poll_fds");
+
     poll_fds[0].fd = listenfd;
     poll_fds[0].events = POLLIN;
 
     poll_fds[1].fd = sockfd_udp;
     poll_fds[1].events = POLLIN;
 
-    while(1);
+    poll_fds[2].fd = 0; // stdin to check for exit
+    poll_fds[2].events = POLLIN;
+
+    int exit_flag = 0;
+
+    while(1) {
+        rc = poll(poll_fds, num_sockets, -1);
+        DIE(rc < 0, "poll");
+
+        for (int i = 0; i < num_sockets; i++) {
+            if (poll_fds[i].revents & POLLIN) {
+                if (poll_fds[i].fd == 0) { // stdin
+                    char message[1024];
+                    scanf("%s", message);
+                    if (strncmp(message, "exit", 4) == 0) {
+                        exit_flag = 1;
+                        break;
+                    } else ;
+                } else {
+                    if (poll_fds[i].fd == listenfd) {
+                        // Am primit o cerere de conexiune pe socketul de listen, pe care
+                        // o acceptam
+                        struct sockaddr_in cli_addr;
+                        socklen_t cli_len = sizeof(cli_addr);
+                        const int newsockfd =
+                            accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
+                        DIE(newsockfd < 0, "accept");
+
+                        // Adaugam noul socket intors de accept() la multimea descriptorilor
+                        // de citire
+                        num_sockets++;
+                        poll_fds = realloc(poll_fds, num_sockets * sizeof(struct pollfd));
+                        DIE(!poll_fds, "realloc");
+                        memset(&(poll_fds[num_sockets - 1]), 0, sizeof(struct pollfd));
+                        poll_fds[num_sockets - 1].fd = newsockfd;
+                        poll_fds[num_sockets - 1].events = POLLIN;
+
+                        printf("New client connected from %s:%d.\n", 
+                                inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+                    }
+                }
+            }
+        }
+
+        if (exit_flag) {
+            break;
+        }
+    }
 
     close(listenfd);
     close(sockfd_udp);
+
+    free(poll_fds);
     return 0;
 }
