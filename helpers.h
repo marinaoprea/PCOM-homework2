@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define LGMAX_ID 10
+
 /*
  * Macro de verificare a erorilor
  * Exemplu:

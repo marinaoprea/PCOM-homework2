@@ -13,6 +13,64 @@
 #include <sys/uio.h>
 
 #include "helpers.h"
+#include "server.h"
+#include "subscriber.h"
+
+int listenfd;
+
+int num_clients;
+struct client_info *clients;
+
+struct pollfd *poll_fds;
+int num_sockets;
+
+void enroll_client() {
+    // Am primit o cerere de conexiune pe socketul de listen, pe care
+    // o acceptam
+    struct sockaddr_in cli_addr;
+    socklen_t cli_len = sizeof(cli_addr);
+    const int newsockfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
+    DIE(newsockfd < 0, "accept");
+
+    // Adaugam noul socket intors de accept() la multimea descriptorilor
+    // de citire
+    num_sockets++;
+    poll_fds = realloc(poll_fds, num_sockets * sizeof(struct pollfd));
+    DIE(!poll_fds, "realloc");
+    memset(&(poll_fds[num_sockets - 1]), 0, sizeof(struct pollfd));
+    poll_fds[num_sockets - 1].fd = newsockfd;
+    poll_fds[num_sockets - 1].events = POLLIN;
+
+    char clientID[10];
+    memset(clientID, 0, sizeof(clientID));
+    int rc = recv(newsockfd, clientID, sizeof(clientID), 0);
+
+    printf("New client %s connected from %s:%d.\n", clientID, inet_ntoa(cli_addr.sin_addr),
+            ntohs(cli_addr.sin_port));
+
+    num_clients++;
+    clients = realloc(clients, num_clients * sizeof(struct client_info));
+    DIE(!clients, "realloc");
+    strcpy(clients[num_clients - 1].ID, clientID);
+    clients[num_clients - 1].num_topics = 0;
+    clients[num_clients - 1].topics = NULL;
+    clients[num_clients - 1].connected = 1;
+    clients[num_clients - 1].index = num_clients - 1;
+}
+
+void receive_from_client(int index) {
+    struct client_message message;
+    memset(&message, 0, sizeof(message));
+
+    int rc = recv(poll_fds[index].fd, &message, sizeof(message), 0);
+    DIE(rc < 0, "recv");
+
+    if (strncmp(message.payload, "disconnected", 12) == 0) {
+        clients[index - OFFSET].connected = 0;
+        printf("Client %s disconnected.\n", clients[index - OFFSET].ID);
+        return;
+    }
+}
 
 int main(int argc, char *argv[]) {
     // setting stdout to be unbuffered
@@ -32,7 +90,7 @@ int main(int argc, char *argv[]) {
 // TCP setup /////////////////////////////////////////////////////////////////////
 
     // Obtinem un socket TCP pentru receptionarea conexiunilor
-    const int listenfd = socket(AF_INET, SOCK_STREAM, 0);
+    listenfd = socket(AF_INET, SOCK_STREAM, 0);
     DIE(listenfd < 0, "socket");
 
     // Completăm in serv_addr adresa serverului, familia de adrese si portul
@@ -91,8 +149,7 @@ int main(int argc, char *argv[]) {
     rc = listen(listenfd, 0);
     DIE(rc < 0, "listen");
 
-    struct pollfd *poll_fds;
-    int num_sockets = 3;
+    num_sockets = 3;
 
     poll_fds = calloc(3, sizeof(struct pollfd));
     DIE(!poll_fds, "calloc poll_fds");
@@ -123,25 +180,13 @@ int main(int argc, char *argv[]) {
                     } else ;
                 } else {
                     if (poll_fds[i].fd == listenfd) {
-                        // Am primit o cerere de conexiune pe socketul de listen, pe care
-                        // o acceptam
-                        struct sockaddr_in cli_addr;
-                        socklen_t cli_len = sizeof(cli_addr);
-                        const int newsockfd =
-                            accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
-                        DIE(newsockfd < 0, "accept");
-
-                        // Adaugam noul socket intors de accept() la multimea descriptorilor
-                        // de citire
-                        num_sockets++;
-                        poll_fds = realloc(poll_fds, num_sockets * sizeof(struct pollfd));
-                        DIE(!poll_fds, "realloc");
-                        memset(&(poll_fds[num_sockets - 1]), 0, sizeof(struct pollfd));
-                        poll_fds[num_sockets - 1].fd = newsockfd;
-                        poll_fds[num_sockets - 1].events = POLLIN;
-
-                        printf("New client connected from %s:%d.\n", 
-                                inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+                        enroll_client();
+                    } else {
+                        if (poll_fds[i].fd == sockfd_udp) {
+                            ;
+                        } else {
+                            receive_from_client(i);
+                        }
                     }
                 }
             }

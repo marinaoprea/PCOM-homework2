@@ -13,6 +13,7 @@
 #include <poll.h>
 
 #include "helpers.h"
+#include "subscriber.h"
 
 int main(int argc, char *argv[]) {
     setvbuf(stdout, NULL, _IONBF, 0); // setting stdout to be unbuffered
@@ -62,6 +63,11 @@ int main(int argc, char *argv[]) {
 
     int exit_flag = 0;
 
+    char my_ID[10];
+    strcpy(my_ID, argv[1]);
+    rc = send(sockfd, my_ID, sizeof(my_ID), 0);
+    DIE(rc < 0, "send");
+
     while(1) {
         rc = poll(poll_fds, num_sockets, -1);
         DIE(rc < 0, "poll");
@@ -80,6 +86,10 @@ int main(int argc, char *argv[]) {
         }
 
         if (exit_flag) {
+            struct client_message message;
+            strcpy(message.payload, "disconnected");
+            rc = send(sockfd, &message, sizeof(message), 0);
+            DIE(rc < 0, "send");
             break;
         }
     }
