@@ -2,14 +2,14 @@
 #include <stdio.h>
 #include <sys/socket.h>
 
-int recv_all(int sockfd, void *buffer, size_t len) {
-  size_t bytes_received = 0;
-  size_t bytes_remaining = len;
+int recv_all(int sockfd, char *buffer, size_t len) {
+  ssize_t bytes_received = 0;
+  ssize_t bytes_remaining = len;
   char *buff = buffer;
 
   while (bytes_remaining) {
     bytes_received = recv(sockfd, buff, bytes_remaining, 0);
-    
+
     if (bytes_received < 0) {
         return -1;
     }
@@ -26,14 +26,16 @@ int recv_all(int sockfd, void *buffer, size_t len) {
     a exact len octeți din buffer.
 */
 
-int send_all(int sockfd, void *buffer, size_t len) {
-  size_t bytes_sent = 0;
-  size_t bytes_remaining = len;
+int send_all(int sockfd, char *buffer, size_t len) {
+  ssize_t bytes_sent = 0;
+  ssize_t bytes_remaining = len;
   char *buff = buffer;
 
   while (bytes_remaining) {
     bytes_sent = send(sockfd, buff, bytes_remaining, 0);
     if (bytes_sent < 0)
+      return bytes_sent;
+    if (bytes_sent == 0)
       return bytes_sent;
 
     bytes_remaining -= bytes_sent;

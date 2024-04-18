@@ -6,6 +6,7 @@
 
 #define LGMAX_ID 10
 #define LGMAX_TOPIC 50
+#define LGMAX_VAL 1500
 
 /*
  * Macro de verificare a erorilor
@@ -23,7 +24,7 @@
     }                                                                          \
   } while (0)
 
-int recv_all(int sockfd, void *buffer, size_t len);
-int send_all(int sockfd, void *buffer, size_t len);
+int recv_all(int sockfd, char *buffer, size_t len);
+int send_all(int sockfd, char *buffer, size_t len);
 
 #endif

@@ -11,11 +11,13 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
+#include <netinet/tcp.h>
 
 #include "helpers.h"
 #include "server.h"
 #include "subscriber.h"
 
+int sockfd_udp;
 int listenfd;
 
 int num_clients;
@@ -32,6 +34,10 @@ void enroll_client() {
     const int newsockfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
     DIE(newsockfd < 0, "accept");
 
+    int enable = 1;
+    int rc = setsockopt(newsockfd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(int));
+    DIE(rc < 0, "setsockopt");
+
     // Adaugam noul socket intors de accept() la multimea descriptorilor
     // de citire
     num_sockets++;
@@ -43,7 +49,7 @@ void enroll_client() {
 
     char clientID[10];
     memset(clientID, 0, sizeof(clientID));
-    int rc = recv(newsockfd, clientID, sizeof(clientID), 0);
+    rc = recv_all(newsockfd, clientID, sizeof(clientID));
 
     printf("New client %s connected from %s:%d.\n", clientID, inet_ntoa(cli_addr.sin_addr),
             ntohs(cli_addr.sin_port));
@@ -55,21 +61,22 @@ void enroll_client() {
     clients[num_clients - 1].num_topics = 0;
     clients[num_clients - 1].topics = NULL;
     clients[num_clients - 1].connected = 1;
-    clients[num_clients - 1].index = num_clients - 1;
+    clients[num_clients - 1].index = num_sockets - 1;
 }
 
-receive_from_client(int index) {
+void receive_from_client(int index) {
     struct client_message message;
     memset(&message, 0, sizeof(message));
 
     //int rc = recv(poll_fds[index].fd, &message, sizeof(message), 0);
-    int rc = recv_all(poll_fds[index].fd, &message, sizeof(message));
+    int rc = recv_all(poll_fds[index].fd, (char *)(&message), sizeof(message));
     DIE(rc < 0, "recv");
 
     if (strncmp(message.command, "exit", 4) == 0) {
         clients[index - OFFSET].connected = 0;
+        close(poll_fds[index].fd);
         printf("Client %s disconnected.\n", clients[index - OFFSET].ID);
-        return 0;
+        return;
     }
 
     if (strncmp(message.command, "subscribe", 9) == 0) {
@@ -107,10 +114,49 @@ receive_from_client(int index) {
             client->topics[i] = client->topics[i + 1];
 
         client->num_topics--;
-        client->topics = realloc(client->topics, client->num_topics * sizeof(char *));
+        if (client->num_topics == 0)
+            free(client->topics);
+        else
+            client->topics = realloc(client->topics, client->num_topics * sizeof(char *));
         DIE(!client->topics, "realloc");
         return;
     }
+}
+
+int client_has_topic(struct client_info *client, struct udp_message *message) {
+    for (int i = 0; i < client->num_topics; i++)
+        if (strcmp(client->topics[i], message->topic) == 0)
+            return 1;
+    return 0;
+}
+
+void receive_udp() {
+    struct udp_message *message = malloc(sizeof(struct udp_message));
+    DIE(!message, "malloc");
+
+    memset(message, 0, sizeof(struct udp_message));
+
+    struct sockaddr_in client_addr;
+    socklen_t clen = sizeof(client_addr);
+    int rc = recvfrom(sockfd_udp, message, sizeof(struct udp_message), 0, 
+                      (struct sockaddr *)&client_addr, &clen);
+    DIE(rc < 0, "recvfrom");
+   // printf("topic:%s\n", message->topic);
+   // printf("tip:%d\n", message->tip_date);
+   // printf("content:%d\n", message->content);
+
+    struct server_message server_msg;
+    memset(&server_msg, 0, sizeof(struct server_message));
+    memcpy(&(server_msg.udp_addr), &client_addr, sizeof(client_addr));
+    memcpy(&(server_msg.message), message, sizeof(struct udp_message));
+
+    for (int i = 0; i < num_clients; i++)
+        if (client_has_topic(&(clients[i]), message)) {
+            send_all(poll_fds[clients[i].index].fd, (char *)(&server_msg), sizeof(struct server_message));
+            printf("sent to %d\n", poll_fds[clients[i].index].fd);
+        }
+
+    free(message);
 }
 
 int main(int argc, char *argv[]) {
@@ -134,6 +180,10 @@ int main(int argc, char *argv[]) {
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
     DIE(listenfd < 0, "socket");
 
+    int enable = 1;
+    rc = setsockopt(listenfd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(int));
+    DIE(rc < 0, "setsockopt");
+
     // Completăm in serv_addr adresa serverului, familia de adrese si portul
     // pentru conectare
     struct sockaddr_in serv_addr_tcp;
@@ -141,7 +191,7 @@ int main(int argc, char *argv[]) {
 
     // Facem adresa socket-ului reutilizabila, ca sa nu primim eroare in caz ca
     // rulam de 2 ori rapid
-    int enable = 1;
+    enable = 1;
     if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
         perror("setsockopt(SO_REUSEADDR) failed");
 
@@ -158,12 +208,11 @@ int main(int argc, char *argv[]) {
 
 // UDP setup //////////////////////////////////////////////////////////////////////
 
-    int sockfd_udp;
     struct sockaddr_in serv_addr_udp;
 
     // Creating socket file descriptor
-    sockfd_udp = socket(AF_INET, SOCK_STREAM, 0);
-    DIE(listenfd < 0, "socket");
+    sockfd_udp = socket(AF_INET, SOCK_DGRAM, 0);
+    DIE(sockfd_udp < 0, "socket");
 
     /* Make ports reusable, in case we run this really fast two times in a row */
     enable = 1;
@@ -224,7 +273,8 @@ int main(int argc, char *argv[]) {
                         enroll_client();
                     } else {
                         if (poll_fds[i].fd == sockfd_udp) {
-                            ;
+                           // printf("received udp\n");
+                            receive_udp();
                         } else {
                             receive_from_client(i);
                         }
