@@ -4,7 +4,7 @@
 #define MAXLEN 100
 
 struct client_message {
-    char command[20];
+    char command[15];
     char topic[LGMAX_TOPIC];
 };
 

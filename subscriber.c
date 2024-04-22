@@ -29,7 +29,7 @@ void subscribe_request(char *message) {
     int rc = send_all(sockfd, (char *)(&client_message), sizeof(client_message));
     DIE(rc < 0, "send_all");
 
-    printf("Subscribed to topic %s.\n", client_message.topic);
+    printf("Subscribed to topic. %s\n", client_message.topic);
 }
 
 void unsubscribe_request(char *message) {
@@ -40,11 +40,11 @@ void unsubscribe_request(char *message) {
     int rc = send_all(sockfd, (char *)(&client_message), sizeof(client_message));
     DIE(rc < 0, "send_all");
 
-    printf("Unsubscribed from topic %s.\n", client_message.topic);
+    printf("Unsubscribed from topic. %s\n", client_message.topic);
 }
 
-float power10(float exp) {
-    float ans = 1.0;
+double power10(uint8_t exp) {
+    double ans = 1;
     while (exp--)
         ans *= 10;
     return ans;
@@ -52,7 +52,29 @@ float power10(float exp) {
 
 void receive_message() {
     struct server_message message;
-    int rc = recv_all(sockfd, (char *)(&message), sizeof(struct server_message));
+    memset(&message, 0, sizeof(struct server_message));
+    int rc = recv_all(sockfd, (char *)(&(message.len)), sizeof(message.len));
+    DIE(rc < 0, "recv_all");
+
+    rc = recv_all(sockfd, (char *)(&(message.udp_addr)), message.len - sizeof(message.len));
+    DIE(rc < 0, "recv_all");
+
+    /*int rc = recv_all(sockfd, (char *)(&message), sizeof(message.udp_addr) + sizeof(message.message.topic) + sizeof(message.message.tip_date));
+    DIE(rc < 0, "recv_all");
+
+    size_t to_recv;
+    if (message.message.tip_date == 0)
+        to_recv = 5;
+    else
+        if (message.message.tip_date == 1)
+            to_recv = 2;
+        else
+            if (message.message.tip_date == 2)
+                to_recv = 6;
+            else
+                to_recv = LGMAX_VAL;
+
+    rc = recv_all(sockfd, (char *)(&(message.message.content)), to_recv);*/
 
     printf("%s:%d - %s - ", inet_ntoa(message.udp_addr.sin_addr), 
            ntohs(message.udp_addr.sin_port), message.message.topic);
@@ -64,7 +86,6 @@ void receive_message() {
         strcpy(type, "INT");
         uint8_t sign = message.message.content[0];
         uint32_t value = ntohl(*((uint32_t *)((char *)message.message.content + 1)));
-
         printf("%s - %d\n", type, (sign ? -1 : 1) * value);
         return;
     }
@@ -81,7 +102,7 @@ void receive_message() {
         uint8_t sign = message.message.content[0];
         uint32_t value = ntohl(*((uint32_t *)(message.message.content + 1)));
         uint8_t exp = message.message.content[5];
-        printf("%s - %f\n", type, (sign ? -1 : 1) * value / power10((float) exp));
+        printf("%s - %f\n", type, (sign ? -1.0 : 1.0) * value / power10(exp));
         return;
     }
     if (message.message.tip_date == 3) {

@@ -13,16 +13,17 @@ struct client_info {
     u_int8_t connected;
 };
 
-struct udp_message {
+struct udp_message  {
     char topic[50];
     uint8_t tip_date;
     char content[LGMAX_VAL];
 };
 
 struct server_message {
+    size_t len;
     struct sockaddr_in udp_addr;
     struct udp_message message;
-};
+}__attribute((packed))__;
 
 void enroll_client();
 void receive_from_client(int index);

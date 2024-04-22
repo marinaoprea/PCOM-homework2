@@ -138,22 +138,71 @@ void receive_udp() {
 
     struct sockaddr_in client_addr;
     socklen_t clen = sizeof(client_addr);
-    int rc = recvfrom(sockfd_udp, message, sizeof(struct udp_message), 0, 
+    int rc = recvfrom(sockfd_udp, message, sizeof(*message), 0, 
                       (struct sockaddr *)&client_addr, &clen);
+    /*if (message->topic[49]) {
+        message->topic[49] = 0;
+        char *p = ((char *)message + 50);
+        for (int i = 50; i < sizeof(struct udp_message); i++) {
+            *p = *(p + 1);
+            p++;
+        }
+    }*/
     DIE(rc < 0, "recvfrom");
-   // printf("topic:%s\n", message->topic);
-   // printf("tip:%d\n", message->tip_date);
-   // printf("content:%d\n", message->content);
+
+    //printf("%s %d %s\n", message->topic, message->tip_date, message->content);
+                    
+    /*if (message->tip_date == 0) {
+        rc = recvfrom(sockfd_udp, &(message->content), 5, 0, 
+                      (struct sockaddr *)&client_addr, &clen);
+        printf("%hu\n", (ntohl(*(uint32_t *)((char *)message->content + 1))));  
+    } else {
+        if (message->tip_date == 1) {
+            rc = recvfrom(sockfd_udp, &(message->content), 2, 0, 
+                      (struct sockaddr *)&client_addr, &clen);
+        } else {
+            if (message->tip_date == 2) {
+                rc = recvfrom(sockfd_udp, &(message->content), 5, 0, 
+                      (struct sockaddr *)&client_addr, &clen);    
+            } else {
+                //int rc = recvfrom(sockfd_udp, &(message->content), LGMAX_VAL - 2, 0, 
+                  //    (struct sockaddr *)&client_addr, &clen);
+            }
+        }
+    }
+*/
+
+
+    DIE(rc < 0, "recvfrom");
 
     struct server_message server_msg;
     memset(&server_msg, 0, sizeof(struct server_message));
     memcpy(&(server_msg.udp_addr), &client_addr, sizeof(client_addr));
     memcpy(&(server_msg.message), message, sizeof(struct udp_message));
 
+    server_msg.len = sizeof(server_msg.len) + sizeof(server_msg.udp_addr) + sizeof(server_msg.message.topic) + sizeof(server_msg.message.tip_date);
+    if (message->tip_date == 0)
+        server_msg.len += 5;
+    else
+        if (message->tip_date == 1)
+            server_msg.len += 2;
+        else
+            if (message->tip_date == 2)
+                server_msg.len = 6;
+            else
+                if (message->content[LGMAX_VAL - 1])
+                    server_msg.len += LGMAX_VAL;
+                else
+                    server_msg.len += strlen(message->content);
+
     for (int i = 0; i < num_clients; i++)
         if (client_has_topic(&(clients[i]), message)) {
-            send_all(poll_fds[clients[i].index].fd, (char *)(&server_msg), sizeof(struct server_message));
-            printf("sent to %d\n", poll_fds[clients[i].index].fd);
+            //send_all(poll_fds[clients[i].index].fd, (char *)(&server_msg), sizeof(struct server_message));
+            // send_all(poll_fds[clients[i].index].fd, &(server_msg.udp_addr), sizeof(server_msg.udp_addr));
+            // send_all(poll_fds[clients[i].index].fd, &(server_msg.message.topic), sizeof(server_msg.message.topic));
+            // send_all(poll_fds[clients[i].index].fd, &(server_msg.message.tip_date), sizeof(server_msg.message.));
+            send_all(poll_fds[clients[i].index].fd, (char *)(&server_msg), server_msg.len);
+           // send_all(poll_fds[clients[i].index].fd, (char *)(&(server_msg.message.content)), to_send);
         }
 
     free(message);
@@ -290,6 +339,8 @@ int main(int argc, char *argv[]) {
 
     close(listenfd);
     close(sockfd_udp);
+    for (int i = 2; i < num_sockets; i++)
+        close(poll_fds[i].fd);
 
     free(poll_fds);
     return 0;
