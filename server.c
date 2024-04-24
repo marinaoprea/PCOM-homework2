@@ -29,14 +29,35 @@ int num_sockets;
 void enroll_client() {
     // Am primit o cerere de conexiune pe socketul de listen, pe care
     // o acceptam
+
     struct sockaddr_in cli_addr;
     socklen_t cli_len = sizeof(cli_addr);
     const int newsockfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
     DIE(newsockfd < 0, "accept");
 
     int enable = 1;
-    int rc = setsockopt(newsockfd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(int));
+    int rc = setsockopt(newsockfd, SOL_SOCKET, SO_REUSEADDR , &enable, sizeof(int));
     DIE(rc < 0, "setsockopt");
+    rc = setsockopt(newsockfd, IPPROTO_TCP, TCP_NODELAY , &enable, sizeof(int));
+    DIE(rc < 0, "setsockopt");
+
+
+    char clientID[11];
+    memset(clientID, 0, sizeof(clientID));
+    rc = recv_all(newsockfd, clientID, sizeof(clientID));
+
+    for (int i = 0; i < num_clients; i++)
+        if (strcmp(clientID, clients[i].ID) == 0) {
+            if (clients[i].connected == 1) {
+                printf("Client %s already connected.\n", clientID);
+                close(newsockfd);
+                return;
+            } else {
+                clients[i].connected = 1;
+                poll_fds[clients[i].index].fd = newsockfd;
+                return;
+            }
+        }
 
     // Adaugam noul socket intors de accept() la multimea descriptorilor
     // de citire
@@ -46,10 +67,7 @@ void enroll_client() {
     memset(&(poll_fds[num_sockets - 1]), 0, sizeof(struct pollfd));
     poll_fds[num_sockets - 1].fd = newsockfd;
     poll_fds[num_sockets - 1].events = POLLIN;
-
-    char clientID[10];
-    memset(clientID, 0, sizeof(clientID));
-    rc = recv_all(newsockfd, clientID, sizeof(clientID));
+    poll_fds[num_sockets - 1].revents = 0;
 
     printf("New client %s connected from %s:%d.\n", clientID, inet_ntoa(cli_addr.sin_addr),
             ntohs(cli_addr.sin_port));
@@ -84,8 +102,8 @@ void receive_from_client(int index) {
         struct client_info *client = &(clients[index_client]);
         client->num_topics++;
         client->topics = realloc(client->topics, client->num_topics * sizeof(char *));
-        client->topics[client->num_topics - 1] = malloc(LGMAX_TOPIC * sizeof(char));
-        memset(client->topics[client->num_topics - 1], 0, LGMAX_TOPIC);
+        client->topics[client->num_topics - 1] = malloc((LGMAX_TOPIC + 1) * sizeof(char));
+        memset(client->topics[client->num_topics - 1], 0, LGMAX_TOPIC + 1);
         strcpy(client->topics[client->num_topics - 1], message.topic);
         return;
     }
@@ -131,86 +149,59 @@ int client_has_topic(struct client_info *client, struct udp_message *message) {
 }
 
 void receive_udp() {
-    struct udp_message *message = malloc(sizeof(struct udp_message));
-    DIE(!message, "malloc");
+  //  struct udp_message *message = malloc(sizeof(struct udp_message));
+   // DIE(!message, "malloc");
 
-    memset(message, 0, sizeof(struct udp_message));
+ //   memset(message, 0, sizeof(struct udp_message));
+
+    char *buf = malloc(sizeof(struct udp_message));
+    memset(buf, 0, sizeof(struct udp_message));
 
     struct sockaddr_in client_addr;
     socklen_t clen = sizeof(client_addr);
-    int rc = recvfrom(sockfd_udp, message, sizeof(*message), 0, 
+    int rc = recvfrom(sockfd_udp, buf, sizeof(struct udp_message), 0, 
                       (struct sockaddr *)&client_addr, &clen);
-    /*if (message->topic[49]) {
-        message->topic[49] = 0;
-        char *p = ((char *)message + 50);
-        for (int i = 50; i < sizeof(struct udp_message); i++) {
-            *p = *(p + 1);
-            p++;
-        }
-    }*/
-    DIE(rc < 0, "recvfrom");
-
-    //printf("%s %d %s\n", message->topic, message->tip_date, message->content);
-                    
-    /*if (message->tip_date == 0) {
-        rc = recvfrom(sockfd_udp, &(message->content), 5, 0, 
-                      (struct sockaddr *)&client_addr, &clen);
-        printf("%hu\n", (ntohl(*(uint32_t *)((char *)message->content + 1))));  
-    } else {
-        if (message->tip_date == 1) {
-            rc = recvfrom(sockfd_udp, &(message->content), 2, 0, 
-                      (struct sockaddr *)&client_addr, &clen);
-        } else {
-            if (message->tip_date == 2) {
-                rc = recvfrom(sockfd_udp, &(message->content), 5, 0, 
-                      (struct sockaddr *)&client_addr, &clen);    
-            } else {
-                //int rc = recvfrom(sockfd_udp, &(message->content), LGMAX_VAL - 2, 0, 
-                  //    (struct sockaddr *)&client_addr, &clen);
-            }
-        }
-    }
-*/
-
-
     DIE(rc < 0, "recvfrom");
 
     struct server_message server_msg;
     memset(&server_msg, 0, sizeof(struct server_message));
-    memcpy(&(server_msg.udp_addr), &client_addr, sizeof(client_addr));
-    memcpy(&(server_msg.message), message, sizeof(struct udp_message));
 
-    server_msg.len = sizeof(server_msg.len) + sizeof(server_msg.udp_addr) + sizeof(server_msg.message.topic) + sizeof(server_msg.message.tip_date);
-    if (message->tip_date == 0)
+    memcpy(&(server_msg.message.topic), buf, LGMAX_TOPIC);
+    memcpy(&(server_msg.message.tip_date), buf + LGMAX_TOPIC, 1);
+    memcpy(&(server_msg.message.content), buf + LGMAX_TOPIC + 1, LGMAX_VAL);
+
+    // memcpy(&(message->topic), buf, LGMAX_TOPIC);
+    // memcpy(&(message->tip_date), buf + LGMAX_TOPIC, 1);
+    // memcpy(&(message->content), buf + LGMAX_TOPIC + 1, LGMAX_VAL);
+
+
+    memcpy(&(server_msg.udp_addr), &client_addr, sizeof(client_addr));
+   //memcpy(&(server_msg.message), message, sizeof(struct udp_message));
+
+    server_msg.len = sizeof(struct server_message) - sizeof(server_msg.message.content);
+    if (server_msg.message.tip_date == 0)
         server_msg.len += 5;
     else
-        if (message->tip_date == 1)
+        if (server_msg.message.tip_date == 1)
             server_msg.len += 2;
         else
-            if (message->tip_date == 2)
-                server_msg.len = 6;
+            if (server_msg.message.tip_date == 2)
+                server_msg.len += 6;
             else
-                if (message->content[LGMAX_VAL - 1])
-                    server_msg.len += LGMAX_VAL;
-                else
-                    server_msg.len += strlen(message->content);
+                server_msg.len += strlen(server_msg.message.content);
 
     for (int i = 0; i < num_clients; i++)
-        if (client_has_topic(&(clients[i]), message)) {
-            //send_all(poll_fds[clients[i].index].fd, (char *)(&server_msg), sizeof(struct server_message));
-            // send_all(poll_fds[clients[i].index].fd, &(server_msg.udp_addr), sizeof(server_msg.udp_addr));
-            // send_all(poll_fds[clients[i].index].fd, &(server_msg.message.topic), sizeof(server_msg.message.topic));
-            // send_all(poll_fds[clients[i].index].fd, &(server_msg.message.tip_date), sizeof(server_msg.message.));
+        if (client_has_topic(&(clients[i]), &(server_msg.message))) {
             send_all(poll_fds[clients[i].index].fd, (char *)(&server_msg), server_msg.len);
-           // send_all(poll_fds[clients[i].index].fd, (char *)(&(server_msg.message.content)), to_send);
         }
 
-    free(message);
+   // free(message);
+    free(buf);
 }
 
 int main(int argc, char *argv[]) {
     // setting stdout to be unbuffered
-    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
 
     if (argc != 2) {
         printf("\n Usage: %s <port>\n", argv[0]);
@@ -230,8 +221,8 @@ int main(int argc, char *argv[]) {
     DIE(listenfd < 0, "socket");
 
     int enable = 1;
-    rc = setsockopt(listenfd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(int));
-    DIE(rc < 0, "setsockopt");
+    //rc = setsockopt(listenfd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(int));
+    //DIE(rc < 0, "setsockopt");
 
     // Completăm in serv_addr adresa serverului, familia de adrese si portul
     // pentru conectare
@@ -243,6 +234,8 @@ int main(int argc, char *argv[]) {
     enable = 1;
     if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
         perror("setsockopt(SO_REUSEADDR) failed");
+    rc = setsockopt(listenfd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(int));
+    DIE(rc < 0, "setsockopt");
 
     memset(&serv_addr_tcp, 0, socket_len);
     serv_addr_tcp.sin_family = AF_INET;
@@ -283,7 +276,6 @@ int main(int argc, char *argv[]) {
     DIE(rc < 0, "bind failed");
 
 //////////////////////////////////////////////////////////////////////////////////
-
     // Setam socket-ul listenfd pentru ascultare
     rc = listen(listenfd, 0);
     DIE(rc < 0, "listen");
@@ -312,7 +304,8 @@ int main(int argc, char *argv[]) {
             if (poll_fds[i].revents & POLLIN) {
                 if (poll_fds[i].fd == 0) { // stdin
                     char message[1024];
-                    scanf("%s", message);
+                    //scanf("%s", message);
+                    fgets(message, 1024, stdin);
                     if (strncmp(message, "exit", 4) == 0) {
                         exit_flag = 1;
                         break;
@@ -322,7 +315,7 @@ int main(int argc, char *argv[]) {
                         enroll_client();
                     } else {
                         if (poll_fds[i].fd == sockfd_udp) {
-                           // printf("received udp\n");
+                            //printf("received udp\n");
                             receive_udp();
                         } else {
                             receive_from_client(i);

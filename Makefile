@@ -1,4 +1,5 @@
 CFLAGS = -Wall -g -Werror -Wno-error=unused-variable
+CC = gcc
 
 all: server subscriber
 

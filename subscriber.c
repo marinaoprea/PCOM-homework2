@@ -13,6 +13,7 @@
 #include <poll.h>
 #include <math.h>
 #include <netinet/tcp.h>
+#include <fcntl.h>
 
 #include "helpers.h"
 #include "subscriber.h"
@@ -29,7 +30,9 @@ void subscribe_request(char *message) {
     int rc = send_all(sockfd, (char *)(&client_message), sizeof(client_message));
     DIE(rc < 0, "send_all");
 
-    printf("Subscribed to topic. %s\n", client_message.topic);
+    printf("Subscribed to topic %s.\n", client_message.topic);
+
+    fflush(stdout);
 }
 
 void unsubscribe_request(char *message) {
@@ -40,7 +43,8 @@ void unsubscribe_request(char *message) {
     int rc = send_all(sockfd, (char *)(&client_message), sizeof(client_message));
     DIE(rc < 0, "send_all");
 
-    printf("Unsubscribed from topic. %s\n", client_message.topic);
+    printf("Unsubscribed from topic %s.\n", client_message.topic);
+    fflush(stdout);
 }
 
 double power10(uint8_t exp) {
@@ -53,28 +57,14 @@ double power10(uint8_t exp) {
 void receive_message() {
     struct server_message message;
     memset(&message, 0, sizeof(struct server_message));
+
     int rc = recv_all(sockfd, (char *)(&(message.len)), sizeof(message.len));
     DIE(rc < 0, "recv_all");
 
-    rc = recv_all(sockfd, (char *)(&(message.udp_addr)), message.len - sizeof(message.len));
+    char *p = (char *)(&message);
+    p += rc;
+    rc = recv_all(sockfd, p, message.len - sizeof(message.len));
     DIE(rc < 0, "recv_all");
-
-    /*int rc = recv_all(sockfd, (char *)(&message), sizeof(message.udp_addr) + sizeof(message.message.topic) + sizeof(message.message.tip_date));
-    DIE(rc < 0, "recv_all");
-
-    size_t to_recv;
-    if (message.message.tip_date == 0)
-        to_recv = 5;
-    else
-        if (message.message.tip_date == 1)
-            to_recv = 2;
-        else
-            if (message.message.tip_date == 2)
-                to_recv = 6;
-            else
-                to_recv = LGMAX_VAL;
-
-    rc = recv_all(sockfd, (char *)(&(message.message.content)), to_recv);*/
 
     printf("%s:%d - %s - ", inet_ntoa(message.udp_addr.sin_addr), 
            ntohs(message.udp_addr.sin_port), message.message.topic);
@@ -87,6 +77,7 @@ void receive_message() {
         uint8_t sign = message.message.content[0];
         uint32_t value = ntohl(*((uint32_t *)((char *)message.message.content + 1)));
         printf("%s - %d\n", type, (sign ? -1 : 1) * value);
+        fflush(stdout);
         return;
     }
 
@@ -94,25 +85,28 @@ void receive_message() {
         strcpy(type, "SHORT_REAL");
         uint16_t value = ntohs(*(uint16_t *)message.message.content);
         printf("%s - %.2f\n", type, value / 100.0);
+        fflush(stdout);
         return;
     }
     
     if (message.message.tip_date == 2) {
         strcpy(type, "FLOAT");
         uint8_t sign = message.message.content[0];
-        uint32_t value = ntohl(*((uint32_t *)(message.message.content + 1)));
+        uint32_t value = ntohl(*((uint32_t *)((char *)message.message.content + 1)));
         uint8_t exp = message.message.content[5];
         printf("%s - %f\n", type, (sign ? -1.0 : 1.0) * value / power10(exp));
+        fflush(stdout);
         return;
     }
     if (message.message.tip_date == 3) {
         strcpy(type, "STRING");
         printf("%s - %s\n", type, message.message.content);
+        fflush(stdout);
     }
 }
 
 int main(int argc, char *argv[]) {
-    setvbuf(stdout, NULL, _IONBF, 0); // setting stdout to be unbuffered
+    setvbuf(stdout, NULL, _IONBF,  BUFSIZ); // setting stdout to be unbuffered
 
     if (argc != 4) {
         printf("\n Usage: %s <ID> <ip> <port>\n", argv[0]);
@@ -129,6 +123,8 @@ int main(int argc, char *argv[]) {
     DIE(sockfd < 0, "socket");
 
     int enable = 1;
+    rc = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+    DIE(rc < 0, "setsockopt");
     rc = setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(int));
     DIE(rc < 0, "setsockopt");
 
@@ -163,7 +159,7 @@ int main(int argc, char *argv[]) {
 
     int exit_flag = 0;
 
-    char my_ID[10];
+    char my_ID[11];
     memset(my_ID, 0, sizeof(my_ID));
     strcpy(my_ID, argv[1]);
     rc = send_all(sockfd, my_ID, sizeof(my_ID));
@@ -202,7 +198,6 @@ int main(int argc, char *argv[]) {
             struct client_message message;
             memset(&message, 0, sizeof(message));
             strcpy(message.command, "exit");
-            //rc = send(sockfd, &message, sizeof(message), 0);
             send_all(sockfd, (char *)(&message), sizeof(message));
             DIE(rc < 0, "send");
             break;

@@ -7,7 +7,7 @@ int recv_all(int sockfd, char *buffer, size_t len) {
   ssize_t bytes_remaining = len;
   char *buff = buffer;
 
-  while (bytes_remaining) {
+    while (bytes_remaining) {
     bytes_received = recv(sockfd, buff, bytes_remaining, 0);
 
     if (bytes_received < 0) {
