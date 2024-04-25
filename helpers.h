@@ -26,5 +26,6 @@
 
 int recv_all(int sockfd, char *buffer, size_t len);
 int send_all(int sockfd, char *buffer, size_t len);
+int pattern_matching(char *str1, char *str2);
 
 #endif

@@ -45,16 +45,25 @@ void enroll_client() {
     char clientID[11];
     memset(clientID, 0, sizeof(clientID));
     rc = recv_all(newsockfd, clientID, sizeof(clientID));
+    char ack;
 
     for (int i = 0; i < num_clients; i++)
         if (strcmp(clientID, clients[i].ID) == 0) {
             if (clients[i].connected == 1) {
                 printf("Client %s already connected.\n", clientID);
+                ack = 0;
+                rc = send_all(newsockfd, &ack, sizeof(char));
+                DIE(rc < 0, "send_all");
                 close(newsockfd);
                 return;
             } else {
                 clients[i].connected = 1;
                 poll_fds[clients[i].index].fd = newsockfd;
+                printf("New client %s connected from %s:%d.\n", clientID, inet_ntoa(cli_addr.sin_addr),
+                        ntohs(cli_addr.sin_port));
+                ack = 1;
+                rc = send_all(newsockfd, &ack, sizeof(char));
+                DIE(rc < 0, "send_all");
                 return;
             }
         }
@@ -71,6 +80,9 @@ void enroll_client() {
 
     printf("New client %s connected from %s:%d.\n", clientID, inet_ntoa(cli_addr.sin_addr),
             ntohs(cli_addr.sin_port));
+    ack = 1;
+    rc = send_all(newsockfd, &ack, sizeof(char));
+    DIE(rc < 0, "send_all");
 
     num_clients++;
     clients = realloc(clients, num_clients * sizeof(struct client_info));
@@ -143,6 +155,7 @@ void receive_from_client(int index) {
 
 int client_has_topic(struct client_info *client, struct udp_message *message) {
     for (int i = 0; i < client->num_topics; i++)
+       // if (pattern_matching(client->topics[i], message->topic))
         if (strcmp(client->topics[i], message->topic) == 0)
             return 1;
     return 0;
@@ -302,9 +315,9 @@ int main(int argc, char *argv[]) {
 
         for (int i = 0; i < num_sockets; i++) {
             if (poll_fds[i].revents & POLLIN) {
+           //     printf("%d\n", poll_fds[i].fd);
                 if (poll_fds[i].fd == 0) { // stdin
                     char message[1024];
-                    //scanf("%s", message);
                     fgets(message, 1024, stdin);
                     if (strncmp(message, "exit", 4) == 0) {
                         exit_flag = 1;
@@ -332,8 +345,12 @@ int main(int argc, char *argv[]) {
 
     close(listenfd);
     close(sockfd_udp);
-    for (int i = 2; i < num_sockets; i++)
+    close(0);
+    size_t exit_fl = (size_t)(-1);
+    for (int i = 3; i < num_sockets; i++) {
+        rc = send_all(poll_fds[i].fd, (char *)(&exit_fl), sizeof(size_t));
         close(poll_fds[i].fd);
+    }
 
     free(poll_fds);
     return 0;

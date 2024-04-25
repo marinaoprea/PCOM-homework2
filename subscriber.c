@@ -61,6 +61,11 @@ void receive_message() {
     int rc = recv_all(sockfd, (char *)(&(message.len)), sizeof(message.len));
     DIE(rc < 0, "recv_all");
 
+    if (message.len == (size_t)(-1)) {
+        close(sockfd);
+        exit(0);
+    }
+
     char *p = (char *)(&message);
     p += rc;
     rc = recv_all(sockfd, p, message.len - sizeof(message.len));
@@ -165,12 +170,21 @@ int main(int argc, char *argv[]) {
     rc = send_all(sockfd, my_ID, sizeof(my_ID));
     DIE(rc < 0, "send");
 
+    char ack;
+    rc = recv_all(sockfd, &ack, sizeof(char));
+    DIE(rc < 0, "recv_all");
+    if (!ack) {
+        close(sockfd);
+        return 0;
+    }
+
     while(1) {
         rc = poll(poll_fds, num_sockets, -1);
         DIE(rc < 0, "poll");
 
         for (int i = 0; i < num_sockets; i++) {
             if (poll_fds[i].revents & POLLIN) {
+           //     printf("%d\n", poll_fds[i].fd);
                 if (poll_fds[i].fd == 0) { // stdin
                     char message[1024];
                     fgets(message, 1024, stdin);
