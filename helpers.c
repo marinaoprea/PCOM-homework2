@@ -46,47 +46,71 @@ int send_all(int sockfd, char *buffer, size_t len) {
 }
 
 int pattern_matching(char *str1, char *str2) {
-    if (str1 == NULL && str2 == NULL)
+    int n1 = strlen(str1);
+    int n2 = strlen(str2);
+
+    char *aux1 = malloc(1 + LGMAX_TOPIC);
+    char *aux2 = malloc(1 + LGMAX_TOPIC);
+    memcpy(aux1, str1, n1 + 1);
+    memcpy(aux2, str2, n2 + 1);
+
+    char **rest1 = &aux1;
+    char **rest2 = &aux2;
+
+    char *copy1 = aux1;
+    char *copy2 = aux2;
+
+    char *p1 = __strtok_r(aux1, "/", rest1);
+    char *p2 = __strtok_r(aux2, "/", rest2);
+
+    if (p1 == NULL || p2 == NULL) {
+      free(copy1);
+      free(copy2);
+      return (strcmp(str1, str2) == 0);
+    }
+
+    int star1 = 0;
+    int star2 = 0;
+    while (p1 && p2) {
+        if (strcmp(p1, p2) == 0 || strcmp(p1, "+") == 0 || strcmp(p2, "+") == 0) {
+          star1 = 0;
+          star2 = 0;
+          p1 = __strtok_r(NULL, "/", rest1);
+          p2 = __strtok_r(NULL, "/", rest2);
+          continue;
+        }
+
+        if (strcmp(p1, "*") == 0) {
+          p1 = __strtok_r(NULL, "/", rest1);
+          star1 = 1;
+          continue;
+        }
+
+        if (strcmp(p2, "*") == 0) {
+          p2 = __strtok_r(NULL, "/", rest1);
+          star1 = 1;
+          continue;
+        }
+
+        if (strcmp(p1, p2)) {
+          if (star1) {
+              p2 = __strtok_r(NULL, "/", rest2);
+              continue;      
+          }
+          if (star2) {
+              p1 = __strtok_r(NULL, "/", rest1);
+              continue;   
+          }
+          break;
+        }
+    }
+
+    free(copy1);
+    free(copy2);
+    if (!p1 && !p2)
       return 1;
-    if (str1 == NULL)
-      return 0;
-    if (str2 == NULL)
-      return 0;
-
-    char *p1 = strtok(str1, "/");
-    char *p2 = strtok(str2, "/");
-
-    if (p1 == NULL || p2 == NULL)
-        return (strcmp(str1, str2) == 0);
-
-    char *next1 = str1 + strlen(p1) + 1;
-    char *next2 = str2 + strlen(p2) + 1;
-    if (strcmp(p1, p2) == 0 || strcmp(p1, "+") == 0 || strcmp(p2, "+") == 0)
-        return pattern_matching(next1, next2);
+    if (p1)
+      return star2;
     
-    if (strcmp(p1, "*") == 0) {
-       int ans = 0;
-       while (p2 && !ans) {
-          ans |= pattern_matching(next1, next2);
-          p2 = strtok(NULL, "/");
-          if (p2)
-            next2 += strlen(p2) + 1;
-       }
-
-       return ans;
-    }
-
-    if (strcmp(p2, "*") == 0) {
-       int ans = 0;
-       while (p1 && !ans) {
-          ans |= pattern_matching(next1, next2);
-          p1 = strtok(NULL, "/");
-          if (p1)
-            next1 += strlen(p1) + 1;
-       }
-
-       return ans;
-    }
-
-    return 0;
+    return star1;
 }

@@ -155,8 +155,8 @@ void receive_from_client(int index) {
 
 int client_has_topic(struct client_info *client, struct udp_message *message) {
     for (int i = 0; i < client->num_topics; i++)
-       // if (pattern_matching(client->topics[i], message->topic))
-        if (strcmp(client->topics[i], message->topic) == 0)
+        if (pattern_matching(client->topics[i], message->topic))
+        //if (strcmp(client->topics[i], message->topic) == 0)
             return 1;
     return 0;
 }
