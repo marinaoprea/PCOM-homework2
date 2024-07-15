@@ -22,11 +22,6 @@ int recv_all(int sockfd, char *buffer, size_t len) {
   return len;
 }
 
-/*
-    TODO 1.2: Rescrieți funcția de mai jos astfel încât ea să facă trimiterea
-    a exact len octeți din buffer.
-*/
-
 int send_all(int sockfd, char *buffer, size_t len) {
   ssize_t bytes_sent = 0;
   ssize_t bytes_remaining = len;
@@ -50,16 +45,20 @@ int pattern_matching(char *str1, char *str2) {
     int n2 = strlen(str2);
 
     char *aux1 = malloc(1 + LGMAX_TOPIC);
+    DIE(!aux1, "malloc");
     char *aux2 = malloc(1 + LGMAX_TOPIC);
+    DIE(!aux2, "malloc");
     memcpy(aux1, str1, n1 + 1);
     memcpy(aux2, str2, n2 + 1);
 
     char **rest1 = &aux1;
     char **rest2 = &aux2;
 
+    // copy of ponters in order to free memory correctly after tokenization
     char *copy1 = aux1;
     char *copy2 = aux2;
 
+    // using reentrant variant of strtok in order to tokenize both strings
     char *p1 = __strtok_r(aux1, "/", rest1);
     char *p2 = __strtok_r(aux2, "/", rest2);
 
@@ -72,7 +71,8 @@ int pattern_matching(char *str1, char *str2) {
     int star1 = 0;
     int star2 = 0;
     while (p1 && p2) {
-        if (strcmp(p1, p2) == 0 || strcmp(p1, "+") == 0 || strcmp(p2, "+") == 0) {
+        if (strcmp(p1, p2) == 0 || strcmp(p1, "+") == 0 || 
+            strcmp(p2, "+") == 0) {
           star1 = 0;
           star2 = 0;
           p1 = __strtok_r(NULL, "/", rest1);
@@ -93,6 +93,7 @@ int pattern_matching(char *str1, char *str2) {
         }
 
         if (strcmp(p1, p2)) {
+          // if not equal, try to pattern match with *
           if (star1) {
               p2 = __strtok_r(NULL, "/", rest2);
               continue;      
@@ -109,8 +110,17 @@ int pattern_matching(char *str1, char *str2) {
     free(copy2);
     if (!p1 && !p2)
       return 1;
+    
+    // try to pattern match the rest with * in str2
     if (p1)
       return star2;
-    
+    // try to pattern match the rest with * in str1
     return star1;
+}
+
+double power10(uint8_t exp) {
+    double ans = 1;
+    while (exp--)
+        ans *= 10;
+    return ans;
 }
